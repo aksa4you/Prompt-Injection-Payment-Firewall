@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payment Firewall</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #667085; --line: #e4e7ec;
+    --ok: #12805c; --okbg: #e3f5ee; --warn: #a15c07; --warnbg: #fdf0d8; --bad: #b42318; --badbg: #fde7e4;
+    --accent: #2f5bea; --accentbg: #e8eeff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101319; --panel: #181c24; --ink: #e8eaee; --muted: #98a2b3; --line: #2a303b;
+      --ok: #52c79d; --okbg: #12332a; --warn: #f0b04a; --warnbg: #3a2c10; --bad: #f97066; --badbg: #3d1a17;
+      --accent: #7f9cff; --accentbg: #1c2542;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0; flex: 1 1 auto; }
+  .stat { padding: 6px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+  .stat b { display: block; font-size: 16px; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .stat.bad b { color: var(--bad); } .stat.good b { color: var(--ok); }
+  .grid { display: grid; grid-template-columns: 300px 340px 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  h3 { font-size: 13px; margin: 16px 0 6px; }
+  .scn { border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; margin-bottom: 8px; }
+  .scn .t { font-weight: 600; } .scn .d { color: var(--muted); font-size: 12px; margin: 2px 0 7px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); } button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--bad); } button:disabled { opacity: .5; cursor: wait; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .CAPTURED { background: var(--okbg); color: var(--ok); }
+  .BLOCKED, .REJECTED, .FAILED { background: var(--badbg); color: var(--bad); }
+  .PENDING_REVIEW, .EXPIRED { background: var(--warnbg); color: var(--warn); }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+  .req { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
+  .req.sel { border-color: var(--accent); background: var(--accentbg); }
+  .req .a { display: flex; justify-content: space-between; gap: 8px; } .req .b { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .muted { color: var(--muted); } .empty { color: var(--muted); padding: 8px 0; }
+  .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 4px 0; }
+  .bar i { display: block; height: 100%; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } @media (max-width: 700px) { .two { grid-template-columns: 1fr; } }
+  .box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; overflow-wrap: anywhere; }
+  .box.ask { border-color: var(--ok); } .box.want { border-color: var(--bad); }
+  .box dt { color: var(--muted); font-size: 11px; text-transform: uppercase; margin-top: 4px; } .box dd { margin: 0; }
+  .chk { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--line); } .chk:last-child { border: 0; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex: none; }
+  .dot.allow { background: var(--ok); } .dot.review { background: var(--warn); } .dot.block { background: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; } td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  code { font: 12px ui-monospace, Menlo, monospace; background: var(--bg); padding: 0 4px; border-radius: 4px; }
+  .ev { font: 12px ui-monospace, Menlo, monospace; padding: 2px 0; } .ev span { color: var(--muted); }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prompt-Injection Payment Firewall</h1>
+  <div class="stat bad"><b id="lost">$0.00</b><span>captured by attacks without the firewall</span></div>
+  <div class="stat good"><b id="saved">$0.00</b><span>attack payments the firewall stopped</span></div>
+  <div class="stat"><b id="chain">…</b><span>audit chain</span></div>
+</header>
+<div class="grid">
+  <section>
+    <h2>Attack scenarios</h2>
+    <div id="scenarios"><div class="empty">Loading…</div></div>
+  </section>
+  <section>
+    <h2>Payment requests</h2>
+    <div id="requests"><div class="empty">No requests yet. Run a scenario.</div></div>
+  </section>
+  <section>
+    <h2>Decision trail</h2>
+    <div id="detail"><div class="empty">Select a request to see why it was allowed, held or blocked.</div></div>
+  </section>
+</div>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+// Everything rendered here may contain attacker-controlled page text, so it is always escaped.
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = (v) => "$" + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+let selected = null, scenarioMeta = {};
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) { let m = res.statusText; try { m = (await res.json()).detail || m; } catch (e) {} throw new Error(m); }
+  return res.json();
+}
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500); }
+const post = (path, body) => api(path, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(body || {})});
+
+async function loadScenarios() {
+  const list = await api("/api/scenarios");
+  list.forEach((s) => scenarioMeta[s.id] = s);
+  $("scenarios").innerHTML = list.map((s) => `
+    <div class="scn">
+      <div class="t">${esc(s.title)} <span class="tag">${esc(s.attack)}</span></div>
+      <div class="d">${esc(s.description)}</div>
+      <div class="row">
+        <button class="primary" data-run="${esc(s.id)}" data-mode="protected">Run with firewall</button>
+        <button data-run="${esc(s.id)}" data-mode="unprotected">Run without</button>
+      </div>
+    </div>`).join("");
+  document.querySelectorAll("[data-run]").forEach((b) => b.addEventListener("click", () => run(b)));
+}
+
+async function run(btn) {
+  btn.disabled = true;
+  try {
+    const r = await post("/api/run", {scenario: btn.dataset.run, mode: btn.dataset.mode});
+    toast(r.mode === "unprotected"
+      ? (r.money_lost ? `Without the firewall: ${money(r.amount)} captured to ${r.payee}` : `Without the firewall: ${money(r.amount)} paid, as the user wanted`)
+      : `Firewall: ${r.initial_status}${r.reason_codes.length ? " (" + r.reason_codes.join(", ") + ")" : ""}`);
+    if (r.mode === "protected") selected = r.request_id;
+    await refresh();
+  } catch (e) { toast("Error: " + e.message); }
+  btn.disabled = false;
+}
+
+function renderRequests(items) {
+  if (!items.length) { $("requests").innerHTML = '<div class="empty">No requests yet. Run a scenario.</div>'; return; }
+  $("requests").innerHTML = items.map((r) => `
+    <div class="req ${r.request_id === selected ? "sel" : ""}" data-id="${esc(r.request_id)}">
+      <div class="a"><b>${money(r.amount)}</b><span class="badge ${esc(r.status)}">${esc(r.status.replace("_", " "))}</span></div>
+      <div class="b">to ${esc(r.payee.id)} · ${esc(r.page_url)}</div>
+      <div class="b">${r.reason_codes.length ? esc(r.reason_codes.join(", ")) : "no flags"}</div>
+    </div>`).join("");
+  document.querySelectorAll(".req").forEach((el) => el.addEventListener("click", () => { selected = el.dataset.id; refresh(); }));
+}
+
+function renderDetail(d, audit) {
+  const det = d.detector, pol = d.policy;
+  const risk = det ? Math.round(det.risk * 100) : null;
+  const color = risk === null ? "var(--muted)" : risk >= 70 ? "var(--bad)" : risk >= 35 ? "var(--warn)" : "var(--ok)";
+  const diff = pol && pol.intent_diff;
+  const kv = (o) => Object.entries(o).filter(([, v]) => !(Array.isArray(v) && !v.length) && v !== "").map(([k, v]) => `<dt>${esc(k.replace("_", " "))}</dt><dd>${esc(Array.isArray(v) ? v.join(", ") : v)}</dd>`).join("");
+  $("detail").innerHTML = `
+    <div class="row"><span class="badge ${esc(d.status)}">${esc(d.status.replace("_", " "))}</span>
+      <b>${money(d.amount)}</b> <span class="muted">${esc(d.currency)} to</span> <code>${esc(d.payee.id)}</code></div>
+    ${d.status === "PENDING_REVIEW" ? `<div class="row" style="margin-top:8px"><button class="primary" id="approve">Approve payment</button><button class="danger" id="reject">Reject &amp; release hold</button></div>` : ""}
+    <h3>Injection risk</h3>
+    ${det ? `<div class="bar"><i style="width:${risk}%;background:${color}"></i></div><div>${risk}% · ${esc(det.recommendation)} · ${esc(det.stats.hidden_fragments)} hidden fragment(s)</div>` : '<div class="muted">detector did not respond (fail closed)</div>'}
+    ${det && det.findings.length ? `<table><tr><th>severity</th><th>finding</th><th>where / excerpt</th></tr>${det.findings.slice(0, 8).map((f) => `<tr><td>${esc(f.severity)}</td><td>${esc(f.rule)}</td><td>${esc(f.where)}<br><span class="muted">${esc(f.excerpt)}</span></td></tr>`).join("")}</table>` : ""}
+    <h3>What the user asked vs what the agent wants</h3>
+    ${diff ? `<div class="two"><div class="box ask"><b>User asked</b><dl style="margin:0">${kv(diff.user_asked)}</dl></div><div class="box want"><b>Agent wants</b><dl style="margin:0">${kv(diff.agent_wants)}</dl></div></div>` : '<div class="muted">no intent comparison available</div>'}
+    <h3>Policy checks</h3>
+    ${pol ? pol.checks.map((c) => `<div class="chk"><span class="dot ${esc(c.status)}"></span><div><b>${esc(c.name)}</b> <span class="muted">${esc(c.message)}</span></div></div>`).join("") : '<div class="muted">policy did not respond (fail closed)</div>'}
+    <h3>Timeline (hash-chained audit log)</h3>
+    ${audit.map((e) => `<div class="ev"><span>#${esc(e.seq)} ${esc(new Date(e.ts * 1000).toLocaleTimeString())}</span> ${esc(e.event)} <span>${esc(e.hash.slice(0, 10))}…</span></div>`).join("")}
+    ${d.receipt ? `<h3>Signed receipt</h3><div class="ev">capture <code>${esc(d.receipt.capture_id)}</code> · approved by ${esc(d.receipt.approved_by)}<br><span>sig ${esc(d.receipt.signature.slice(0, 24))}…</span></div>` : ""}
+    ${d.errors.length ? `<h3>Errors</h3>${d.errors.map((e) => `<div class="ev">${esc(e)}</div>`).join("")}` : ""}`;
+  const decide = (verb) => async () => { try { await post(`/api/requests/${encodeURIComponent(d.request_id)}/${verb}`); toast(verb === "approve" ? "Approved and captured" : "Rejected, hold released"); refresh(); } catch (e) { toast("Error: " + e.message); } };
+  if ($("approve")) { $("approve").addEventListener("click", decide("approve")); $("reject").addEventListener("click", decide("reject")); }
+}
+
+async function refresh() {
+  try {
+    const [reqs, runs, chain] = await Promise.all([api("/api/requests"), api("/api/runs"), api("/api/audit/verify")]);
+    $("lost").textContent = money(runs.lost_unprotected);
+    $("saved").textContent = money(runs.blocked_by_firewall);
+    $("chain").textContent = chain.ok ? `valid (${chain.entries})` : `BROKEN at #${chain.broken_at}`;
+    $("chain").style.color = chain.ok ? "var(--ok)" : "var(--bad)";
+    renderRequests(reqs);
+    if (selected && reqs.some((r) => r.request_id === selected)) {
+      const [d, audit] = await Promise.all([api("/api/requests/" + encodeURIComponent(selected)), api("/api/audit?request_id=" + encodeURIComponent(selected))]);
+      renderDetail(d, audit);
+    }
+  } catch (e) { $("chain").textContent = "gateway offline"; $("chain").style.color = "var(--bad)"; }
+}
+
+loadScenarios().then(refresh);
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
